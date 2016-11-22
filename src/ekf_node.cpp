@@ -168,7 +168,7 @@ void update(const nav_msgs::Odometry::ConstPtr &msg)
 
 void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    //ROS_INFO("IMU CALLBACK , TIME :%f", msg->header.stamp.toSec());
+    ROS_INFO("IMU CALLBACK , TIME :%f", msg->header.stamp.toSec());
     //your code for propagation
     if (!flag_g_init && cnt_g_init < 30)
     {
@@ -193,7 +193,9 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
         x_history.push(x);
         P_history.push(P);
         pub_odom(msg->header);
-
+        cout << " quat " << x(0) << x(1) <<x (2) << x(3) << endl;
+        cout << "    p " << x(4) << x(5) << x(6) << endl;
+        cout << "    v " << x(7) << x(8) << x(9) << endl;
     }
     
 }
@@ -201,7 +203,7 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 
 void odom_callback(const nav_msgs::Odometry::ConstPtr &msg)
 {
-    //ROS_INFO("odom CALLBACK , TIME :%f", msg->header.stamp.toSec());
+    ROS_INFO("odom CALLBACK , TIME :%f", msg->header.stamp.toSec());
     //your code for update
     //camera position in the IMU frame = (0, -0.05, +0.02)
     //camera orientaion in the IMU frame = Quaternion(0, 0, -1, 0); w x y z, respectively
@@ -250,12 +252,16 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         {
             while(!imu_buf.empty() && imu_buf.front()->header.stamp < msg->header.stamp)
             {
+                t = msg->header.stamp.toSec();
                 imu_buf.pop();
                 x_history.pop();
                 P_history.pop();
             }
-            x = x_history.front();
-            P = P_history.front();
+            if(!x_history.empty())
+            {
+                x = x_history.front();
+                P = P_history.front();
+            }
             update(msg);
             while(!x_history.empty()) x_history.pop();
             while(!P_history.empty()) P_history.pop();

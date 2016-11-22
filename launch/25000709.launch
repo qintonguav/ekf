@@ -1,7 +1,7 @@
 <launch>
 
 
-    <node name="rosbag" pkg="rosbag" type="play" args=" $(find ekf)/bag/ekf_25000709.bag -r 0.5" />
+    <node name="rosbag" pkg="rosbag" type="play" args=" $(find ekf)/bag/ekf_25000709.bag" />
 
     <node pkg="ekf" type="ekf" name="ekf" output="screen">
         <remap from="~imu" to="/mavlink/imu_standard"/>
