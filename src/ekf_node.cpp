@@ -6,6 +6,7 @@
 #include <nav_msgs/Odometry.h>
 #include <Eigen/Eigen>
 #include <queue>
+#include <vector>
 
 using namespace std;
 using namespace Eigen;
@@ -13,39 +14,17 @@ ros::Publisher odom_pub;
 bool flag_g_init = false;
 bool flag_odom_init = false;
 VectorXd x(16);
-MatrixXd P = MatrixXd::Zero(15, 15);
+MatrixXd P = 100 * MatrixXd::Identity(15, 15);
 MatrixXd Q = MatrixXd::Identity(12, 12);
 MatrixXd Rt = MatrixXd::Identity(6,6);
 Vector3d g_init = Vector3d::Zero();
 Vector3d G;
-queue<Matrix<double, 3, 1>> x_history;
+queue<Matrix<double, 16, 1>> x_history;
 queue<Matrix<double, 15, 15>> P_history;
 int cnt_g_init = 0;
 double t;
 queue<sensor_msgs::Imu::ConstPtr> imu_buf;
 queue<nav_msgs::Odometry::ConstPtr> odom_buf;
-
-void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
-{
-    //ROS_INFO("IMU CALLBACK , TIME :%f", msg->header.stamp.toSec());
-    //your code for propagation
-    if (!flag_g_init && cnt_g_init < 30)
-    {
-        Vector3d a;
-        a(0) = msg->linear_acceleration.x;
-        a(1) = msg->linear_acceleration.y;
-        a(2) = msg->linear_acceleration.z;
-        cnt_g_init++;
-        g_init += a;
-    }
-    if (!flag_g_init && cnt_g_init == 30)
-    {
-        g_init /= cnt_g_init;
-        flag_g_init = true;
-    }
-    imu_buf.push(msg);
-    
-}
 
 //Rotation from the camera frame to the IMU frame
 //Matrix3d imu_R_cam = Quaterniond(0, 0, -1, 0).toRotationMatrix();
@@ -53,51 +32,34 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 Matrix3d imu_R_cam = Quaterniond(0, 0, 1, 0).toRotationMatrix();
 VectorXd imu_T_cam = Vector3d(0, -0.04, -0.02);
 Eigen::Matrix3d Rcam;
-void odom_callback(const nav_msgs::Odometry::ConstPtr &msg)
+
+void pub_odom(std_msgs::Header header)
 {
-    //ROS_INFO("odom CALLBACK , TIME :%f", msg->header.stamp.toSec());
-    //your code for update
-    //camera position in the IMU frame = (0, -0.05, +0.02)
-    //camera orientaion in the IMU frame = Quaternion(0, 0, -1, 0); w x y z, respectively
-    if (!flag_odom_init)
-    {
-        double cur_t = msg->header.stamp.toSec();
-        Quaterniond Quat_r;
-        Quat_r.w() = msg->pose.pose.orientation.w;
-        Quat_r.x() = msg->pose.pose.orientation.x;
-        Quat_r.y() = msg->pose.pose.orientation.y;
-        Quat_r.z() = msg->pose.pose.orientation.z;
-        Matrix3d cam_R_w = Quat_r.toRotationMatrix();
+    //pub odom
+    Matrix3d vicon_R_tag;
+    vicon_R_tag << 0, 1, 0,
+                    1, 0 ,0,
+                    0, 0 ,-1;
+    Quaterniond Quat(x(0), x(1), x(2), x(3));
+    Quat = vicon_R_tag * Quat;
+    Vector3d vicon_p, vicon_v;
+    vicon_p = vicon_R_tag * Vector3d(x(4), x(5), x(6));
+    vicon_v = vicon_R_tag * Vector3d(x(7), x(8), x(9));
+    nav_msgs::Odometry odom;
+    odom.header.stamp = header.stamp;
+    odom.header.frame_id = "world";
+    odom.pose.pose.position.x = vicon_p(0);
+    odom.pose.pose.position.y = vicon_p(1);
+    odom.pose.pose.position.z = vicon_p(2);
+    odom.pose.pose.orientation.w = Quat.w();
+    odom.pose.pose.orientation.x = Quat.x();
+    odom.pose.pose.orientation.y = Quat.y();
+    odom.pose.pose.orientation.z = Quat.z();
+    odom.twist.twist.linear.x = vicon_v(0);
+    odom.twist.twist.linear.y = vicon_v(1);
+    odom.twist.twist.linear.z = vicon_v(2);
 
-        Vector3d cam_T_w;
-        cam_T_w(0) = msg->pose.pose.position.x;
-        cam_T_w(1) = msg->pose.pose.position.y;
-        cam_T_w(2) = msg->pose.pose.position.z;
-
-        Matrix3d w_R_imu = cam_R_w.transpose() * imu_R_cam.transpose();
-        Vector3d w_T_imu = -cam_R_w.transpose() * (imu_R_cam.transpose() * imu_T_cam + cam_T_w);
-
-        x.setZero();
-        Quaterniond w_Q_imu(w_R_imu);
-        x.head<4>() << w_Q_imu.w(),w_Q_imu.vec();
-        x.segment<3>(4) = w_T_imu;
-        t = cur_t;
-        if(flag_g_init)
-        {
-            ROS_WARN_STREAM("average g vector:  " << g_init.transpose());
-            G = w_R_imu * g_init;
-            ROS_WARN_STREAM("gravity vector in world frame:  " << G.transpose());
-            //G = G / G.norm() * 9.805;
-            flag_odom_init = true;
-            while (imu_buf.front()->header.stamp < msg->header.stamp)
-            {
-                imu_buf.pop();
-            }
-        }
-    }
-    else
-        odom_buf.push(msg);
-
+    odom_pub.publish(odom);
 }
 
 void propagate(const sensor_msgs::ImuConstPtr &imu_msg)
@@ -156,31 +118,6 @@ void propagate(const sensor_msgs::ImuConstPtr &imu_msg)
 
     t = cur_t;
 
-    //pub odom
-    Matrix3d vicon_R_tag;
-    vicon_R_tag << 0, 1, 0,
-                    1, 0 ,0,
-                    0, 0 ,-1;
-    Quaterniond Quat(x(0), x(1), x(2), x(3));
-    Quat = vicon_R_tag * Quat;
-    Vector3d vicon_p, vicon_v;
-    vicon_p = vicon_R_tag * Vector3d(x(4), x(5), x(6));
-    vicon_v = vicon_R_tag * Vector3d(x(7), x(8), x(9));
-    nav_msgs::Odometry odom;
-    odom.header.stamp = imu_msg->header.stamp;
-    odom.header.frame_id = "world";
-    odom.pose.pose.position.x = vicon_p(0);
-    odom.pose.pose.position.y = vicon_p(1);
-    odom.pose.pose.position.z = vicon_p(2);
-    odom.pose.pose.orientation.w = Quat.w();
-    odom.pose.pose.orientation.x = Quat.x();
-    odom.pose.pose.orientation.y = Quat.y();
-    odom.pose.pose.orientation.z = Quat.z();
-    odom.twist.twist.linear.x = vicon_v(0);
-    odom.twist.twist.linear.y = vicon_v(1);
-    odom.twist.twist.linear.z = vicon_v(2);
-
-    odom_pub.publish(odom);
 }
 
 void update(const nav_msgs::Odometry::ConstPtr &msg)
@@ -229,6 +166,116 @@ void update(const nav_msgs::Odometry::ConstPtr &msg)
     P = P - K * C * P;
 }
 
+void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
+{
+    //ROS_INFO("IMU CALLBACK , TIME :%f", msg->header.stamp.toSec());
+    //your code for propagation
+    if (!flag_g_init && cnt_g_init < 30)
+    {
+        Vector3d a;
+        a(0) = msg->linear_acceleration.x;
+        a(1) = msg->linear_acceleration.y;
+        a(2) = msg->linear_acceleration.z;
+        cnt_g_init++;
+        g_init += a;
+    }
+    if (!flag_g_init && cnt_g_init == 30)
+    {
+        g_init /= cnt_g_init;
+        flag_g_init = true;
+    }
+    
+
+    if(flag_g_init && flag_odom_init)
+    {
+        imu_buf.push(msg);
+        propagate(msg);
+        x_history.push(x);
+        P_history.push(P);
+        pub_odom(msg->header);
+
+    }
+    
+}
+
+
+void odom_callback(const nav_msgs::Odometry::ConstPtr &msg)
+{
+    //ROS_INFO("odom CALLBACK , TIME :%f", msg->header.stamp.toSec());
+    //your code for update
+    //camera position in the IMU frame = (0, -0.05, +0.02)
+    //camera orientaion in the IMU frame = Quaternion(0, 0, -1, 0); w x y z, respectively
+    if (!flag_odom_init)
+    {
+        double cur_t = msg->header.stamp.toSec();
+        Quaterniond Quat_r;
+        Quat_r.w() = msg->pose.pose.orientation.w;
+        Quat_r.x() = msg->pose.pose.orientation.x;
+        Quat_r.y() = msg->pose.pose.orientation.y;
+        Quat_r.z() = msg->pose.pose.orientation.z;
+        Matrix3d cam_R_w = Quat_r.toRotationMatrix();
+
+        Vector3d cam_T_w;
+        cam_T_w(0) = msg->pose.pose.position.x;
+        cam_T_w(1) = msg->pose.pose.position.y;
+        cam_T_w(2) = msg->pose.pose.position.z;
+
+        Matrix3d w_R_imu = cam_R_w.transpose() * imu_R_cam.transpose();
+        Vector3d w_T_imu = -cam_R_w.transpose() * (imu_R_cam.transpose() * imu_T_cam + cam_T_w);
+
+        x.setZero();
+        Quaterniond w_Q_imu(w_R_imu);
+        x.head<4>() << w_Q_imu.w(),w_Q_imu.vec();
+        x.segment<3>(4) = w_T_imu;
+        t = cur_t;
+        if(flag_g_init)
+        {
+            ROS_WARN_STREAM("average g vector:  " << g_init.transpose());
+            G = w_R_imu * g_init;
+            ROS_WARN_STREAM("gravity vector in world frame:  " << G.transpose());
+            //G = G / G.norm() * 9.805;
+            flag_odom_init = true;
+            /*
+            while (imu_buf.front()->header.stamp < msg->header.stamp)
+            {
+                imu_buf.pop();
+            }
+            */
+        }
+    }
+    else
+    {
+        //odom_buf.push(msg);
+        if(flag_g_init && flag_odom_init)
+        {
+            while(!imu_buf.empty() && imu_buf.front()->header.stamp < msg->header.stamp)
+            {
+                imu_buf.pop();
+                x_history.pop();
+                P_history.pop();
+            }
+            x = x_history.front();
+            P = P_history.front();
+            update(msg);
+            while(!x_history.empty()) x_history.pop();
+            while(!P_history.empty()) P_history.pop();
+            queue<sensor_msgs::Imu::ConstPtr> new_imu_buf;
+            while(!imu_buf.empty())
+            {
+                propagate(imu_buf.front());
+                new_imu_buf.push(imu_buf.front());
+                x_history.push(x);
+                P_history.push(P);
+                imu_buf.pop();
+            }
+            std::swap(imu_buf, new_imu_buf);
+        }
+    }
+
+}
+
+
+/*
 void process()
 {
     if (!flag_g_init || !flag_odom_init)
@@ -256,8 +303,9 @@ void process()
         imu_buf.pop();
     }
     update(odom_msg);
+    pub_odom(odom_msg->header);
 }
-
+*/
 
 
 int main(int argc, char **argv)
@@ -280,10 +328,13 @@ int main(int argc, char **argv)
               0, 0, -1;
     Quaterniond Q_tmp(R_tmp);
     cout << "Q_tmp " << Q_tmp.w() << Q_tmp.vec().transpose() << endl;
+    /*
     while (ros::ok())
     {
         ros::spinOnce();
         process();
         r.sleep();
     }
+    */
+    ros::spin();
 }
