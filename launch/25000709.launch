@@ -1,0 +1,19 @@
+<launch>
+
+
+    <node name="rosbag" pkg="rosbag" type="play" args=" $(find ekf)/bag/ekf_25000709.bag -r 0.5" />
+
+    <node pkg="ekf" type="ekf" name="ekf" output="screen">
+        <remap from="~imu" to="/mavlink/imu_standard"/>
+        <remap from="~tag_odom" to="/tag_detector/odom"/>
+    </node>
+
+
+    <node pkg="tag_detector" type="tag_detector" name="tag_detector" output="log">
+        <remap from="~image_raw" to="/mv_25000709/image_raw"/> 
+        <param name="cam_cal_file" type="string" value="$(find ekf)/config/25000709.yml"/> 
+        <param name="board_config_file" type="string" value="$(find tag_detector)/config/a.yml"/> 
+    </node>
+
+</launch>
+
