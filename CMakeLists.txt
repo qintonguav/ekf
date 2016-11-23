@@ -23,6 +23,6 @@ catkin_package(
     )
 
 add_executable(ekf
-    src/ekf_node_naive.cpp)
+    src/ekf_node.cpp)
 target_link_libraries(ekf ${catkin_LIBRARIES})
 

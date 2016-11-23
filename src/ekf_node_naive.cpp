@@ -253,7 +253,7 @@ int main(int argc, char **argv)
     Q.bottomRightCorner(6, 6) = 0.01 * Q.bottomRightCorner(6, 6); // IMU  noise  bg   ba
     Rt.topLeftCorner(3, 3) = 0.5 * Rt.topLeftCorner(3, 3);  // Measure orientation
     Rt.bottomRightCorner(3, 3) = 0.5 * Rt.bottomRightCorner(3, 3); // Measure  position
-    Rt.bottomRightCorner(1, 1) = 0.1 * Rt.bottomRightCorner(1, 1); // Measure  position
+    Rt.bottomRightCorner(1, 1) = 0.5 * Rt.bottomRightCorner(1, 1); // Measure  position
     Matrix3d R_tmp;
     R_tmp << -1, 0 ,0,
               0, 1, 0,
