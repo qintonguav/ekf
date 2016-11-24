@@ -76,6 +76,12 @@ void propagate(const sensor_msgs::ImuConstPtr &imu_msg)
     w(2) = imu_msg->angular_velocity.z;
 
     double dt = cur_t - t;
+    //ROS_INFO("LAST TIME %f", t);
+    //ROS_INFO("CURR TIME %f", cur_t);
+    if(dt <= 0)
+    {
+        ROS_BREAK();
+    }
     Quaterniond R(x(0), x(1), x(2), x(3));
     x.segment<3>(4) += x.segment<3>(7) * dt + 0.5 * (R * (a - x.segment<3>(10)) - G) * dt * dt;
     x.segment<3>(7) += (R * (a - x.segment<3>(10)) - G) * dt;
@@ -164,11 +170,12 @@ void update(const nav_msgs::Odometry::ConstPtr &msg)
 
     x.segment<12>(4) += _r.tail(12);
     P = P - K * C * P;
+//    t = msg->header.stamp.toSec();
 }
 
 void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
 {
-    ROS_INFO("IMU CALLBACK , TIME :%f", msg->header.stamp.toSec());
+    //ROS_INFO("IMU CALLBACK , TIME :%f", msg->header.stamp.toSec());
     //your code for propagation
     if (!flag_g_init && cnt_g_init < 30)
     {
@@ -193,9 +200,9 @@ void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
         x_history.push(x);
         P_history.push(P);
         pub_odom(msg->header);
-        cout << " quat " << x(0) << x(1) <<x (2) << x(3) << endl;
-        cout << "    p " << x(4) << x(5) << x(6) << endl;
-        cout << "    v " << x(7) << x(8) << x(9) << endl;
+        //cout << " quat " << x(0) << x(1) <<x (2) << x(3) << endl;
+        //cout << "    p " << x(4) << x(5) << x(6) << endl;
+        //cout << "    v " << x(7) << x(8) << x(9) << endl;
     }
     
 }
@@ -252,7 +259,8 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg)
         {
             while(!imu_buf.empty() && imu_buf.front()->header.stamp < msg->header.stamp)
             {
-                t = msg->header.stamp.toSec();
+                ROS_INFO("throw state with TIME :%f", imu_buf.front()->header.stamp.toSec());
+                t = imu_buf.front()->header.stamp.toSec();
                 imu_buf.pop();
                 x_history.pop();
                 P_history.pop();
@@ -261,13 +269,19 @@ void odom_callback(const nav_msgs::Odometry::ConstPtr &msg)
             {
                 x = x_history.front();
                 P = P_history.front();
+                t = imu_buf.front()->header.stamp.toSec();
+                imu_buf.pop();
+                x_history.pop();
+                P_history.pop();
             }
+            ROS_INFO("update state with TIME :%f", msg->header.stamp.toSec());
             update(msg);
             while(!x_history.empty()) x_history.pop();
             while(!P_history.empty()) P_history.pop();
             queue<sensor_msgs::Imu::ConstPtr> new_imu_buf;
             while(!imu_buf.empty())
             {
+                ROS_INFO("propagate state with TIME :%f", imu_buf.front()->header.stamp.toSec());
                 propagate(imu_buf.front());
                 new_imu_buf.push(imu_buf.front());
                 x_history.push(x);
@@ -324,7 +338,7 @@ int main(int argc, char **argv)
     Rcam = Quaterniond(0, 0, -1, 0).toRotationMatrix();
     ros::Rate r(100);
     Q.topLeftCorner(6, 6) = 0.01 * Q.topLeftCorner(6, 6);  // IMU noise  w   a  
-    Q.bottomRightCorner(6, 6) = 0.01 * Q.bottomRightCorner(6, 6); // IMU  noise  bg   ba
+    Q.bottomRightCorner(6, 6) = 0.0001 * Q.bottomRightCorner(6, 6); // IMU  noise  bg   ba
     Rt.topLeftCorner(3, 3) = 0.5 * Rt.topLeftCorner(3, 3);  // Measure orientation
     Rt.bottomRightCorner(3, 3) = 0.5 * Rt.bottomRightCorner(3, 3); // Measure  position
     Rt.bottomRightCorner(1, 1) = 0.5 * Rt.bottomRightCorner(1, 1); // Measure  position

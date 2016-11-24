@@ -164,6 +164,8 @@ void update(const nav_msgs::Odometry::ConstPtr &msg)
 
     x.segment<12>(4) += _r.tail(12);
     P = P - K * C * P;
+
+    //t = msg->header.stamp.toSec();
 }
 
 void imu_callback(const sensor_msgs::Imu::ConstPtr &msg)
@@ -250,7 +252,7 @@ int main(int argc, char **argv)
     Rcam = Quaterniond(0, 0, -1, 0).toRotationMatrix();
     ros::Rate r(100);
     Q.topLeftCorner(6, 6) = 0.01 * Q.topLeftCorner(6, 6);  // IMU noise  w   a  
-    Q.bottomRightCorner(6, 6) = 0.01 * Q.bottomRightCorner(6, 6); // IMU  noise  bg   ba
+    Q.bottomRightCorner(6, 6) = 0.0001 * Q.bottomRightCorner(6, 6); // IMU  noise  bg   ba
     Rt.topLeftCorner(3, 3) = 0.5 * Rt.topLeftCorner(3, 3);  // Measure orientation
     Rt.bottomRightCorner(3, 3) = 0.5 * Rt.bottomRightCorner(3, 3); // Measure  position
     Rt.bottomRightCorner(1, 1) = 0.5 * Rt.bottomRightCorner(1, 1); // Measure  position
